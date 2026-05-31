@@ -1,4 +1,10 @@
-# 📚 Notion RAG 챗봇 — 배포
+# 📚 Notion RAG 챗봇 
+
+[Layout (공통)]
+ ├── Header (선택)
+ ├── Main Content
+ │     └── Page (Chat UI)
+ └── Global CSS
 
 노션 문서를 기반으로 질문에 답하는 AI 챗봇입니다. 
 
