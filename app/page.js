@@ -9,7 +9,9 @@ export default function ChatPage() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [syncInfo, setSyncInfo] = useState(null);
+  const [syncedCount, setSyncedCount] = useState(0);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -17,19 +19,23 @@ export default function ChatPage() {
   }, [messages]);
 
   async function handleSync() {
+    setIsSyncing(true);
     setSyncInfo("동기화 중...");
     try {
-      const res = await fetch("/api/sync");
+      const res = await fetch("/api/sync", { method: "POST" }); // fix: 'syn' → 'sync'
       const data = await res.json();
       if (data.ok) {
-        setSyncInfo(`✅ ${data.pages}개 페이지 동기화 완료: ${data.titles.join(", ")}`);
+        setSyncedCount(data.pages || 0);
+        setSyncInfo(`✅ ${data.pages}개 페이지 동기화 완료`);
       } else {
-        setSyncInfo("❌ 오류: " + data.error);
+        setSyncInfo("❌ 오류: " + (data.error || "알 수 없는 오류"));
       }
     } catch {
       setSyncInfo("❌ 연결 실패");
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncInfo(null), 5000);
     }
-    setTimeout(() => setSyncInfo(null), 5000);
   }
 
   async function handleSend() {
@@ -56,6 +62,7 @@ export default function ChatPage() {
         }),
       });
 
+      // fix: res.json() 대신 스트리밍 읽기
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -77,14 +84,20 @@ export default function ChatPage() {
             if (parsed.sources) {
               setMessages((prev) => {
                 const updated = [...prev];
-                updated[updated.length - 1].sources = parsed.sources;
+                updated[updated.length - 1] = {
+                  ...updated[updated.length - 1],
+                  sources: parsed.sources,
+                };
                 return updated;
               });
             }
             if (parsed.text) {
               setMessages((prev) => {
                 const updated = [...prev];
-                updated[updated.length - 1].content += parsed.text;
+                updated[updated.length - 1] = {
+                  ...updated[updated.length - 1],
+                  content: updated[updated.length - 1].content + parsed.text,
+                };
                 return updated;
               });
             }
@@ -94,7 +107,10 @@ export default function ChatPage() {
     } catch (err) {
       setMessages((prev) => {
         const updated = [...prev];
-        updated[updated.length - 1].content = "오류가 발생했습니다: " + err.message;
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          content: "오류가 발생했습니다: " + err.message,
+        };
         return updated;
       });
     } finally {
@@ -103,217 +119,117 @@ export default function ChatPage() {
   }
 
   return (
-    <div style={styles.shell}>
-      {/* Header */}
-      <header style={styles.header}>
-        <div style={styles.headerLeft}>
-          <div style={styles.logo}>N</div>
-          <div>
-            <div style={styles.headerTitle}>Notion RAG 챗봇</div>
-            <div style={styles.headerSub}>노션 문서 기반 AI 어시스턴트</div>
-          </div>
-        </div>
-        <button style={styles.syncBtn} onClick={handleSync}>
-          🔄 동기화
-        </button>
-      </header>
+    <div className="flex h-screen bg-[#FBFBFA] text-[#37352F] dark:bg-[#191919] dark:text-[#E3E3E3]">
 
-      {syncInfo && <div style={styles.syncBanner}>{syncInfo}</div>}
-
-      {/* Messages */}
-      <div style={styles.messages}>
-        {messages.map((msg, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", marginBottom: 16 }}>
-            {msg.role === "assistant" && (
-              <div style={styles.avatar}>AI</div>
-            )}
-            <div style={{ maxWidth: "72%" }}>
-              <div style={msg.role === "user" ? styles.userBubble : styles.aiBubble}>
-                {msg.content || (loading && i === messages.length - 1 ? <Cursor /> : "")}
-              </div>
-              {msg.sources?.length > 0 && (
-                <div style={styles.sources}>
-                  <span style={styles.sourcesLabel}>📄 참고 문서</span>
-                  {msg.sources.map((s, j) => (
-                    <a key={j} href={s.url} target="_blank" rel="noreferrer" style={styles.sourceChip}>
-                      {s.title}
-                    </a>
-                  ))}
-                </div>
-              )}
+      {/* 사이드바 */}
+      <aside className="w-72 border-r border-gray-200 dark:border-[#2A2A2A] p-6 flex flex-col justify-between bg-[#F7F7F5] dark:bg-[#202020]">
+        <div>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-9 h-9 bg-black dark:bg-[#E3E3E3] text-white dark:text-black rounded-lg flex items-center justify-center font-bold text-base">N</div>
+            <div>
+              <h1 className="text-sm font-semibold">Notion RAG</h1>
+              <p className="text-xs text-gray-400">Knowledge Base Assistant</p>
             </div>
           </div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
 
-      {/* Input */}
-      <div style={styles.inputArea}>
-        <textarea
-          style={styles.textarea}
-          placeholder="노션 문서에 대해 질문하세요..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          rows={1}
-        />
-        <button
-          style={{ ...styles.sendBtn, opacity: loading || !input.trim() ? 0.5 : 1 }}
-          onClick={handleSend}
-          disabled={loading || !input.trim()}
-        >
-          ↑
-        </button>
-      </div>
+          <div className="mt-6 bg-white dark:bg-[#2F2F2F] p-4 rounded-xl border border-gray-100 dark:border-transparent">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-medium text-gray-600 dark:text-gray-300">문서 동기화</span>
+              <span className={`inline-block w-2 h-2 rounded-full ${isSyncing ? "bg-amber-400 animate-pulse" : "bg-emerald-500"}`}></span>
+            </div>
+            <button
+              onClick={handleSync}
+              disabled={isSyncing}
+              className="w-full py-2 px-4 bg-black hover:bg-gray-800 text-white dark:bg-[#E3E3E3] dark:text-black dark:hover:bg-gray-200 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isSyncing ? "동기화 중..." : "🔄 실시간 동기화"}
+            </button>
+            {syncInfo && (
+              <div className="mt-2 text-xs text-amber-700 dark:text-amber-300">{syncInfo}</div>
+            )}
+            <div className="mt-3 pt-3 border-t border-gray-100 dark:border-[#3F3F3F] text-xs text-gray-400 flex justify-between">
+              <span>학습된 페이지</span>
+              <span className="font-semibold text-black dark:text-white">{syncedCount}개</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="text-xs text-gray-300 dark:text-gray-600">
+          Powered by Next.js & Notion API
+        </div>
+      </aside>
+
+      {/* 메인 채팅창 */}
+      <main className="flex-1 flex flex-col h-full bg-white dark:bg-[#191919]">
+        <header className="h-14 border-b border-gray-100 dark:border-[#2A2A2A] flex items-center px-8">
+          <span className="text-sm font-semibold">💬 AI 어시스턴트</span>
+        </header>
+
+        {/* 메시지 영역 */}
+        <div className="flex-1 overflow-y-auto p-8 space-y-6 max-w-3xl mx-auto w-full">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              {msg.role === "assistant" && (
+                <div className="w-7 h-7 min-w-[28px] bg-amber-500 text-white rounded-lg flex items-center justify-center text-[10px] font-bold mr-2 mt-1">AI</div>
+              )}
+              <div className="max-w-[78%]">
+                <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                  msg.role === "user"
+                    ? "bg-[#0B93F6] text-white rounded-tr-sm"
+                    : "bg-[#F1F1EF] dark:bg-[#2F2F2F] text-gray-800 dark:text-gray-200 rounded-tl-sm"
+                }`}>
+                  {msg.content || (loading && i === messages.length - 1 ? (
+                    <span className="inline-flex gap-1">
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></span>
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></span>
+                      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></span>
+                    </span>
+                  ) : "")}
+                </div>
+                {msg.sources?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5 items-center">
+                    <span className="text-[11px] text-gray-400">📄 참고 문서</span>
+                    {msg.sources.map((s, j) => (
+                      <a key={j} href={s.url} target="_blank" rel="noreferrer"
+                        className="text-[11px] px-2 py-0.5 bg-amber-50 dark:bg-[#2F2A20] border border-amber-200 dark:border-amber-800 rounded-full text-amber-700 dark:text-amber-400 no-underline hover:bg-amber-100 transition-colors">
+                        {s.title}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* 입력창 */}
+        <footer className="p-6 max-w-3xl mx-auto w-full">
+          <div className="relative flex items-end gap-2">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="노션 문서에 대해 질문해보세요..."
+              rows={1}
+              className="flex-1 resize-none bg-[#F4F4F2] dark:bg-[#252525] focus:outline-none focus:ring-2 focus:ring-gray-300 dark:focus:ring-gray-700 rounded-xl pl-4 pr-4 py-3 text-sm text-[#37352F] dark:text-[#E3E3E3] leading-relaxed max-h-32 overflow-y-auto"
+            />
+            <button
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="w-10 h-10 bg-black dark:bg-[#E3E3E3] text-white dark:text-black rounded-xl flex items-center justify-center text-lg hover:opacity-80 transition-all disabled:opacity-30 flex-shrink-0"
+            >
+              ↑
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-300 dark:text-gray-600 mt-2 text-center">Enter로 전송 · Shift+Enter로 줄바꿈</p>
+        </footer>
+      </main>
     </div>
   );
 }
-
-function Cursor() {
-  return <span style={{ display: "inline-block", width: 8, height: 16, background: "#c8a96e", borderRadius: 2, animation: "blink 1s step-end infinite" }}>
-    <style>{`@keyframes blink { 50% { opacity: 0 } }`}</style>
-  </span>;
-}
-
-const styles = {
-  shell: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100vh",
-    maxWidth: 760,
-    margin: "0 auto",
-    background: "var(--surface)",
-    boxShadow: "0 0 0 1px var(--border)",
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "18px 24px",
-    borderBottom: "1px solid var(--border)",
-    background: "var(--surface)",
-  },
-  headerLeft: { display: "flex", alignItems: "center", gap: 12 },
-  logo: {
-    width: 40, height: 40,
-    background: "var(--ink)",
-    color: "var(--bg)",
-    borderRadius: 10,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    fontFamily: "'Instrument Serif', serif",
-    fontSize: 22,
-  },
-  headerTitle: { fontWeight: 500, fontSize: 15, color: "var(--ink)" },
-  headerSub: { fontSize: 12, color: "var(--ink-muted)", marginTop: 1 },
-  syncBtn: {
-    padding: "8px 14px",
-    background: "var(--accent-soft)",
-    border: "1px solid var(--accent)",
-    borderRadius: 8,
-    color: "#7a5c2a",
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-    fontFamily: "inherit",
-  },
-  syncBanner: {
-    padding: "10px 24px",
-    background: "var(--accent-soft)",
-    borderBottom: "1px solid var(--border)",
-    fontSize: 13,
-    color: "#7a5c2a",
-  },
-  messages: {
-    flex: 1,
-    overflowY: "auto",
-    padding: "24px",
-    display: "flex",
-    flexDirection: "column",
-  },
-  avatar: {
-    width: 32, height: 32, minWidth: 32,
-    background: "var(--accent)",
-    color: "#fff",
-    borderRadius: 8,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: 11,
-    fontWeight: 600,
-    marginRight: 10,
-    marginTop: 2,
-  },
-  aiBubble: {
-    background: "var(--bg)",
-    border: "1px solid var(--border)",
-    borderRadius: "4px 16px 16px 16px",
-    padding: "12px 16px",
-    fontSize: 14,
-    lineHeight: 1.7,
-    color: "var(--ink)",
-    whiteSpace: "pre-wrap",
-  },
-  userBubble: {
-    background: "var(--user-bg)",
-    color: "var(--user-text)",
-    borderRadius: "16px 4px 16px 16px",
-    padding: "12px 16px",
-    fontSize: 14,
-    lineHeight: 1.7,
-    whiteSpace: "pre-wrap",
-  },
-  sources: {
-    marginTop: 8,
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 6,
-    alignItems: "center",
-  },
-  sourcesLabel: { fontSize: 11, color: "var(--ink-muted)", marginRight: 2 },
-  sourceChip: {
-    fontSize: 11,
-    padding: "3px 8px",
-    background: "var(--accent-soft)",
-    border: "1px solid var(--accent)",
-    borderRadius: 20,
-    color: "#7a5c2a",
-    textDecoration: "none",
-  },
-  inputArea: {
-    display: "flex",
-    gap: 10,
-    padding: "16px 24px",
-    borderTop: "1px solid var(--border)",
-    background: "var(--surface)",
-    alignItems: "flex-end",
-  },
-  textarea: {
-    flex: 1,
-    resize: "none",
-    border: "1px solid var(--border)",
-    borderRadius: 12,
-    padding: "12px 16px",
-    fontSize: 14,
-    fontFamily: "inherit",
-    background: "var(--bg)",
-    color: "var(--ink)",
-    outline: "none",
-    lineHeight: 1.5,
-    maxHeight: 120,
-    overflowY: "auto",
-  },
-  sendBtn: {
-    width: 42, height: 42,
-    background: "var(--ink)",
-    color: "#fff",
-    border: "none",
-    borderRadius: 12,
-    fontSize: 18,
-    cursor: "pointer",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    transition: "opacity 0.2s",
-  },
-};
