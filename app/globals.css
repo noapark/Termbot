@@ -9,13 +9,11 @@
   --user-bg: #1a1a1a;
   --user-text: #ffffff;
 }
-
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
-
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
